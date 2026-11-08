@@ -1,0 +1,24 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "remote" },
+  "build": {
+    "base": {
+      "env": { "EXPO_PUBLIC_API_URL": "https://api.ondaqui.com.br", "EXPO_PUBLIC_SHARE_URL": "https://painel.ondaqui.com.br" }
+    },
+    "bauru-passageiro": {
+      "extends": "base",
+      "env": { "EXPO_PUBLIC_VARIANT": "passageiro", "EXPO_PUBLIC_TENANT": "bauru", "EXPO_PUBLIC_BRAND": "OnDaqui Bauru" }
+    },
+    "bauru-motorista": {
+      "extends": "base",
+      "env": { "EXPO_PUBLIC_VARIANT": "motorista", "EXPO_PUBLIC_TENANT": "bauru", "EXPO_PUBLIC_BRAND": "OnDaqui Bauru" }
+    },
+    "guarda-chuva-passageiro": {
+      "extends": "base",
+      "env": { "EXPO_PUBLIC_VARIANT": "passageiro", "EXPO_PUBLIC_TENANT": "", "EXPO_PUBLIC_BRAND": "OnDaqui" }
+    },
+    "guarda-chuva-motorista": {
+      "extends": "base",
+      "env": { "EXPO_PUBLIC_VARIANT": "motorista", "EXPO_PUBLIC_TENANT": "", "EXPO_PUBLIC_BRAND": "OnDaqui" }
+    }
+  }
+}
