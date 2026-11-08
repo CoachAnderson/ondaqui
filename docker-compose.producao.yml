@@ -1,0 +1,124 @@
+# OnDaqui em produção (VPS).
+# Use sempre pelo script:  ./ondaqui.sh <comando>   (veja DEPLOY.md)
+#
+# Nada aqui fica exposto direto na internet: a API e o painel escutam só em 127.0.0.1
+# e o Nginx da VPS faz o HTTPS e encaminha painel.<domínio> e api.<domínio>.
+
+name: ondaqui
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ondaqui
+      POSTGRES_DB: ondaqui
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+    volumes:
+      - banco:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ondaqui -d ondaqui"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    shm_size: 128mb
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: ondaqui-api:atual
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://ondaqui:${POSTGRES_PASSWORD}@db:5432/ondaqui
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      CORS_ORIGINS: https://${PAINEL_DOMINIO:?defina PAINEL_DOMINIO}
+      PUSH_MODE: ${PUSH_MODE:-expo}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      UPLOAD_DIR: /data/uploads
+      PUBLIC_API_URL: https://${API_DOMINIO:?defina API_DOMINIO}
+      PAINEL_URL: https://${PAINEL_DOMINIO}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY (rode sudo ./ondaqui.sh atualizar)}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      BILLING_SUSPEND_AFTER_DAYS: ${BILLING_SUSPEND_AFTER_DAYS:-15}
+      INVOICE_DUE_DAY: ${INVOICE_DUE_DAY:-10}
+      # rotas reais pelas ruas (ligado por: sudo ./ondaqui.sh rotas). Vazio = estimativa
+      ROUTING_URL: ${ROUTING_URL:-}
+      # códigos por SMS ou WhatsApp (veja segredos.conf)
+      SMS_PROVIDER: ${SMS_PROVIDER:-log}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM: ${TWILIO_FROM:-}
+      SMS_WEBHOOK_URL: ${SMS_WEBHOOK_URL:-}
+      SMS_WEBHOOK_TOKEN: ${SMS_WEBHOOK_TOKEN:-}
+      PHONE_VERIFICATION: ${PHONE_VERIFICATION:-off}
+      PLATFORM_LEGAL_NAME: ${PLATFORM_LEGAL_NAME:-OnDaqui Tecnologia}
+      PLATFORM_CNPJ: ${PLATFORM_CNPJ:-44.607.634/0001-82}
+    volumes:
+      - arquivos:/data/uploads
+    ports:
+      - "127.0.0.1:${API_PORTA:-3340}:3333"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  painel:
+    build:
+      context: .
+      dockerfile: apps/painel/Dockerfile
+      args:
+        VITE_API_URL: https://${API_DOMINIO:?defina API_DOMINIO}
+    image: ondaqui-painel:atual
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PAINEL_PORTA:-3341}:80"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # rotas pelas ruas (OSRM + OpenStreetMap). Só sobe depois de preparar o mapa com: sudo ./ondaqui.sh rotas
+  rotas:
+    image: osrm/osrm-backend:v5.27.1
+    profiles: ["rotas"]
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld --max-table-size 1000 /data/regiao.osrm
+    volumes:
+      - ./infra/rotas:/data:ro
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # cópia de segurança do banco todo dia, guardada em ./backups por 14 dias
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      MANTER_DIAS: ${BACKUP_MANTER_DIAS:-14}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/ondaqui-$$(date +%Y-%m-%d_%H%M).sql.gz
+          if pg_dump -h db -U ondaqui -d ondaqui --no-owner | gzip > "$$f.tmp"; then
+            mv "$$f.tmp" "$$f" && echo "backup ok: $$f"
+          else
+            rm -f "$$f.tmp"; echo "FALHA no backup"
+          fi
+          find /backups -name 'ondaqui-*.sql.gz' -mtime +$$MANTER_DIAS -delete
+          sleep 86400
+        done
+
+volumes:
+  banco:
+  arquivos:

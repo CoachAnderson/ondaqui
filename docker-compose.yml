@@ -1,0 +1,17 @@
+# Banco de dados do OnDaqui para desenvolvimento.
+# Uso: docker compose up -d
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ondaqui
+      POSTGRES_PASSWORD: ondaqui
+      POSTGRES_DB: ondaqui
+    ports:
+      - "5432:5432"
+    volumes:
+      - dados:/var/lib/postgresql/data
+      - ./infra/criar-banco-de-testes.sql:/docker-entrypoint-initdb.d/01-testes.sql:ro
+volumes:
+  dados:
